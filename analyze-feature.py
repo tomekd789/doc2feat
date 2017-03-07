@@ -49,30 +49,3 @@ with open(tag_file) as tag:
                     print line_c
             doc_cnt = doc_cnt + 1
 
-exit()
-# 
-totals = [0] * 200
-vector = [0.0] * 200
-match = [0] * 200
-with open("/home/tomek/w2v/forpaper/UCI-200-tagged.csv", "r") as fi:
-    for line in fi:
-      pos = line.find(";")
-      #print line[:pos]
-      #w = raw_input("")
-      sentiment = int(line[:pos])
-      line = line[pos+1:]
-      for i in range(200):
-        pos = line.find(";")
-        vector[i] = float(line[:pos])
-        line = line[pos+1:]
-      for i in range (200):
-        if vector[i] > 0.3:
-          totals[i] = totals[i] + 1
-          if sentiment == 1:
-            match[i] = match[i] + 1
-for i in range(200):
-  #if totals[i] > 300: # 10%
-    if float(match[i])/totals[i] > 0.8:
-      print "Positive: ", i, totals[i], float(match[i])/totals[i]
-    if float(match[i])/totals[i] < 0.209:
-      print "Negative: ", i, totals[i], float(match[i])/totals[i]
