@@ -1,3 +1,6 @@
+-- Note that in the doc2feat.c file the license only covers parts commented as 'tomekd789'.
+-- The original word2vec source is copyrighted separately, as mentioned in the source file.
+
 Eclipse Public License - v 1.0
 
 THE ACCOMPANYING PROGRAM IS PROVIDED UNDER THE TERMS OF THIS ECLIPSE PUBLIC
