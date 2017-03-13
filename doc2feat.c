@@ -44,7 +44,7 @@ char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
 // tomekd789...
 char read_semantic_space_file[MAX_STRING];
 char write_semantic_space_file[MAX_STRING];
-char features_file[MAX_STRING];
+char features_file[MAX_STRING], fs_file[MAX_STRING];
 int k_iter = 10, words_per_feat = 10;
 // ...tomekd789
 struct vocab_word *vocab;
@@ -644,20 +644,20 @@ void CalculateTopics() {
   int *centcn = (int *)malloc(clcn * sizeof(int));
   int *cl = (int *)calloc(vocab_size, sizeof(int));
   real closev, x;
-  real *cent = (real *)calloc(clcn * layer1_size, sizeof(real));
+  real *fspace = (real *)calloc(clcn * layer1_size, sizeof(real));
   long long a, b, c, d;
   for (a = 0; a < vocab_size; a++) cl[a] = a % clcn;
   // K-means loop
   for (a = 0; a < iter; a++) {
-    for (b = 0; b < clcn * layer1_size; b++) cent[b] = 0;
+    for (b = 0; b < clcn * layer1_size; b++) fspace[b] = 0;
     for (b = 0; b < clcn; b++) centcn[b] = 1;
     for (c = 0; c < vocab_size; c++) {
-      for (d = 0; d < layer1_size; d++) cent[layer1_size * cl[c] + d] += syn0[c * layer1_size + d];
+      for (d = 0; d < layer1_size; d++) fspace[layer1_size * cl[c] + d] += syn0[c * layer1_size + d];
       centcn[cl[c]]++;
     }
     // Normalize length vs count; it's then NOT normalized wrt L2 norm
     for (b = 0; b < clcn; b++)
-      for (c = 0; c < layer1_size; c++) cent[layer1_size * b + c] /= centcn[b];
+      for (c = 0; c < layer1_size; c++) fspace[layer1_size * b + c] /= centcn[b];
     for (c = 0; c < vocab_size; c++) {
       if ((debug_mode > 1) && (c % 1000 == 0)) {
         printf("%cK-means iteration %lld of %d; vocab word %lldK of %lldK            %c",
@@ -670,7 +670,7 @@ void CalculateTopics() {
         x = 0;
         real y = 0;
         for (b = 0; b < layer1_size; b++) {
-          y = cent[layer1_size * d + b] - syn0[c * layer1_size + b]; // L1 norm
+          y = fspace[layer1_size * d + b] - syn0[c * layer1_size + b]; // L1 norm
           if (y < 0) y = -y;
           x += y;
         }
@@ -686,7 +686,7 @@ void CalculateTopics() {
   // Normalize classes vectors, L2 norm, for subsequent cosine distance calculations
   for(a = 0; a < clcn; a++) {
     real len_class = 0;
-    for (b = 0; b < layer1_size; b++) len_class += cent[a * layer1_size + b] * cent[a * layer1_size + b];
+    for (b = 0; b < layer1_size; b++) len_class += fspace[a * layer1_size + b] * fspace[a * layer1_size + b];
     len_class = sqrt(len_class);
     if (len_class == 0) {
       printf("ERROR: a class vector with zero length.\n");
@@ -694,7 +694,7 @@ void CalculateTopics() {
       printf("( tomekd789@gmail.com )\n");
       exit(1);
     }
-    for (b = 0; b < layer1_size; b++) cent[a * layer1_size + b] /= len_class;
+    for (b = 0; b < layer1_size; b++) fspace[a * layer1_size + b] /= len_class;
   }
 
   // Generate and save features
@@ -724,7 +724,7 @@ void CalculateTopics() {
       // calculate the cosine distance between the class vector and the word vector
       real len = 0;
       for (c = 0; c < layer1_size; c++) {
-        x += cent[layer1_size * b + c] * syn0[a * layer1_size + c];
+        x += fspace[layer1_size * b + c] * syn0[a * layer1_size + c];
         len += syn0[a * layer1_size + c] * syn0[a * layer1_size + c];
       }
       x /= sqrt(len); // syn0 might be pre-normalized, but decided not to touch global tables; too large to copy
@@ -754,6 +754,27 @@ void CalculateTopics() {
       fprintf(ft, "%s %f\n",
               vocab[feat_table[b * words_per_feat + d].cn].word,
               feat_table[b * words_per_feat + d].dist);
+  }
+
+  // Write feature space to fs
+  if (fs_file[0] != 0) {
+    FILE *fs = fopen(fs_file, "wb");
+    if (ft == NULL) {
+      printf("ERROR: cannot write feature space to file!\n");
+      exit(1);
+    }
+    if (debug_mode > 1) {
+      printf("%cSaving the feature space                                            %c", 13, 13);
+      fflush(stdout);
+    }
+    fprintf(fs, "%lld %lld\n", clcn, layer1_size);
+    for (a = 0; a < clcn; a++) {
+      fprintf(fs, "%lld ", a);
+      if (binary) for (b = 0; b < layer1_size; b++) fwrite(&fspace[a * layer1_size + b], sizeof(real), 1, fs);
+      else for (b = 0; b < layer1_size; b++) fprintf(fs, "%lf ", fspace[a * layer1_size + b]);
+      fprintf(fs, "\n");
+    }
+    fclose(fs);
   }
 
   fclose(ft);
@@ -804,7 +825,7 @@ void CalculateTopics() {
     for(a = 0; a < clcn; a++) {
       // Calculate the cosine distance between the accumulator and the i-th class vector
       real x = 0;
-      for (b = 0; b < layer1_size; b++) x += acc_vec[b] * cent[a * layer1_size + b];
+      for (b = 0; b < layer1_size; b++) x += acc_vec[b] * fspace[a * layer1_size + b];
       // Write the feature num and the cosine distance calculated
       if (sparse) {
         if ((x > 0.3) || (x < -0.3)) fprintf(fto, " %lld %f", a, x);
@@ -825,7 +846,7 @@ void CalculateTopics() {
   }
   for (a = 0; a < clcn; a++) if (significant_features[a]) sig_feat_cnt++;
   if (debug_mode > 0) printf("%c%d significant features (> 0.5) found.                     \n", 13, sig_feat_cnt);
-  fclose(ftr); fclose(fto); free(acc_vec); free(cent);
+  fclose(ftr); fclose(fto); free(acc_vec); free(fspace);
 }
 
 int ArgPos(char *str, int argc, char **argv) {
@@ -896,7 +917,9 @@ int main(int argc, char **argv) {
     printf("\t-save-semantic-space <file>\n");
     printf("\tThe semantic space will be saved to <file>\n");
     printf("\t-features <file>\n");
-    printf("\tFeatures will be saved to <file>\n");
+    printf("\tFeatures will be saved to <file> (proxy word sets)\n");
+    printf("\t-f-space <file>\n");
+    printf("\tThe feature space will be saved to <file> (vectors)\n");
     // ...tomekd789
     printf("\t-cbow <int>\n");
     printf("\t\tUse the continuous bag of words model; default is 1 (use 0 for skip-gram model)\n");
@@ -923,6 +946,7 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-read-semantic-space", argc, argv)) > 0) strcpy(read_semantic_space_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-save-semantic-space", argc, argv)) > 0) strcpy(write_semantic_space_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-features", argc, argv)) > 0) strcpy(features_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-f-space", argc, argv)) > 0) strcpy(fs_file, argv[i + 1]);
   // ...tomekd789
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
